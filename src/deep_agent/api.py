@@ -528,6 +528,12 @@ async def _thread_state(
     quedó pausado en un `__interrupt__` esperando aprobación y si ya hay
     historial guardado en el thread (para no duplicar mensajes al reenviar el
     historial completo en cada request).
+
+    Nota: la clave `__interrupt__` NO está en `snapshot.values` al consultar con
+    `aget_state()` — sólo aparece en el dict que devuelve `graph.ainvoke()`
+    cuando el grafo se pausa en ese mismo call. El interrupt pendiente vive en
+    `snapshot.tasks`, en el atributo `.interrupts` de cada `PregelTask` (cada
+    `Interrupt` tiene `.value` con el HITLRequest: `action_requests`/`review_configs`).
     """
     try:
         snapshot = await graph.aget_state(config)
@@ -535,9 +541,16 @@ async def _thread_state(
         return None, None
     if snapshot is None:
         return None, None
+
+    # Leer los interrupts pendientes desde las tasks (ver nota del docstring).
+    pending = None
+    for task in snapshot.tasks or ():
+        task_interrupts = getattr(task, "interrupts", None)
+        if task_interrupts:
+            pending = _interrupt_value(task_interrupts[0])
+            break
+
     values = snapshot.values or {}
-    interrupts = values.get("__interrupt__")
-    pending = _interrupt_value(interrupts[0]) if interrupts else None
     return pending, values.get("messages")
 
 
