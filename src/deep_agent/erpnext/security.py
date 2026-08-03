@@ -11,15 +11,18 @@ logger = logging.getLogger("deep_agent.erpnext.security")
 
 # Allowlist of permitted DocTypes per functional domain
 DOMAIN_ALLOWLISTS: dict[str, set[str]] = {
-    "crm": {"Lead", "Customer", "Opportunity", "Quotation", "Issue", "Address", "Contact"},
-    "invoicing": {"Sales Order", "Sales Invoice", "Payment Entry", "Customer", "Item"},
+    "crm": {"Lead", "Customer", "Opportunity", "Quotation", "Issue", "Address", "Contact", "Communication", "Email Queue"},
+    "invoicing": {"Sales Order", "Sales Invoice", "Payment Entry", "Customer", "Item", "Communication", "Email Queue"},
     "accounting": {
         "Account",
         "Journal Entry",
         "Payment Entry",
         "Payment Reconciliation",
         "GL Entry",
+        "Communication",
+        "Email Queue",
     },
+    "notifications": {"Communication", "Email Queue", "Notification"},
 }
 
 # Global union of all permitted DocTypes

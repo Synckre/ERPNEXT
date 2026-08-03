@@ -185,10 +185,54 @@ async def erpnext_submit_document(doctype: str, name: str) -> str:
         return f"Unexpected error submitting {clean_doctype} '{name}': {exc}"
 
 
+@tool
+async def erpnext_send_email(
+    recipients: str | list[str],
+    subject: str,
+    message: str,
+    reference_doctype: str | None = None,
+    reference_name: str | None = None,
+) -> str:
+    """Send an email notification using ERPNext's configured SMTP email account (frappe.sendmail).
+
+    Args:
+        recipients: Recipient email address or list of addresses (e.g. "client@company.com").
+        subject: Email subject line.
+        message: Email body text or HTML.
+        reference_doctype: Optional DocType to link this communication to (e.g. "Sales Invoice", "Quotation").
+        reference_name: Optional document ID/name to link this communication to (e.g. "ACC-SINV-2026-00001").
+    """
+    if reference_doctype:
+        try:
+            reference_doctype = ERPNextSecurityPolicy.validate_doctype(reference_doctype)
+        except ERPNextSecurityError as sec_err:
+            ERPNextSecurityPolicy.log_audit_event("send_email", reference_doctype, doc_name=reference_name, success=False, error=str(sec_err))
+            return f"Security Violation: {sec_err}"
+
+    client = _get_client()
+    try:
+        res = await client.send_email(
+            recipients=recipients,
+            subject=subject,
+            message=message,
+            reference_doctype=reference_doctype,
+            reference_name=reference_name,
+        )
+        ERPNextSecurityPolicy.log_audit_event("send_email", reference_doctype or "Communication", doc_name=reference_name, data={"recipients": recipients, "subject": subject}, success=True)
+        return f"Email queued successfully via ERPNext. Response: {json.dumps(res, indent=2, default=str)}"
+    except ERPNextError as exc:
+        ERPNextSecurityPolicy.log_audit_event("send_email", reference_doctype or "Communication", doc_name=reference_name, success=False, error=str(exc))
+        return f"Error sending email via ERPNext: {exc}"
+    except Exception as exc:
+        ERPNextSecurityPolicy.log_audit_event("send_email", reference_doctype or "Communication", doc_name=reference_name, success=False, error=str(exc))
+        return f"Unexpected error sending email via ERPNext: {exc}"
+
+
 ALL_ERPNEXT_TOOLS = [
     erpnext_list_documents,
     erpnext_get_document,
     erpnext_create_document,
     erpnext_update_document,
     erpnext_submit_document,
+    erpnext_send_email,
 ]

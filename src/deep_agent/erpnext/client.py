@@ -131,3 +131,25 @@ class ERPNextClient:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             res = await client.post(endpoint, headers=self._get_headers(), json=args or {})
             return self._handle_response(res)
+
+    async def send_email(
+        self,
+        recipients: str | list[str],
+        subject: str,
+        message: str,
+        reference_doctype: str | None = None,
+        reference_name: str | None = None,
+    ) -> Any:
+        """Send an email using Frappe/ERPNext's sendmail RPC method."""
+        recipients_str = recipients if isinstance(recipients, str) else ", ".join(recipients)
+        args: dict[str, Any] = {
+            "recipients": recipients_str,
+            "subject": subject,
+            "message": message,
+        }
+        if reference_doctype:
+            args["reference_doctype"] = reference_doctype
+        if reference_name:
+            args["reference_name"] = reference_name
+
+        return await self.run_method("frappe.sendmail", args=args)
