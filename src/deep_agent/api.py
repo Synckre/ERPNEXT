@@ -8,7 +8,7 @@ import uuid
 from typing import AsyncGenerator
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Security
+from fastapi import Depends, FastAPI, Header, HTTPException, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
@@ -88,6 +88,7 @@ class ChatCompletionRequest(BaseModel):
     stream: bool = False
     temperature: float | None = None
     max_tokens: int | None = None
+    user: str | None = None
 
 
 class ModelInfo(BaseModel):
@@ -132,13 +133,18 @@ async def list_models():
 
 
 @app.post("/v1/chat/completions", dependencies=[Depends(verify_api_key)])
-async def chat_completions(body: ChatCompletionRequest):
-    """Chat completions — compatible con OpenAI y Open WebUI."""
+async def chat_completions(
+    body: ChatCompletionRequest,
+    x_thread_id: str | None = Header(default=None, alias="X-Thread-ID"),
+):
+    """Chat completions — compatible con OpenAI y Open WebUI con persistencia por hilo."""
     langchain_messages = _to_langchain_messages(body.messages)
+    thread_id = x_thread_id or body.user or "default_thread"
+    config = {"configurable": {"thread_id": thread_id}}
 
     if body.stream:
         return StreamingResponse(
-            _stream_chat(body.model, langchain_messages),
+            _stream_chat(body.model, langchain_messages, config=config),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -149,7 +155,7 @@ async def chat_completions(body: ChatCompletionRequest):
 
     # ── No streaming ──────────────────────
     try:
-        result = await graph.ainvoke({"messages": langchain_messages})
+        result = await graph.ainvoke({"messages": langchain_messages}, config=config)
         assistant_msg = _last_assistant_message(result.get("messages", []), result)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -189,6 +195,7 @@ async def chat_completions(body: ChatCompletionRequest):
 async def _stream_chat(
     model: str,
     messages: list,
+    config: dict | None = None,
 ) -> AsyncGenerator[str, None]:
     """Genera SSE en formato OpenAI."""
     completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
@@ -206,7 +213,7 @@ async def _stream_chat(
 
     try:
         async for event in graph.astream_events(
-            {"messages": messages}, version="v2"
+            {"messages": messages}, version="v2", config=config
         ):
             if event.get("event") == "on_chat_model_stream":
                 chunk = event.get("data", {}).get("chunk")

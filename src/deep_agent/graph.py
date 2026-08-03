@@ -22,6 +22,9 @@ if not os.getenv("DEEPSEEK_API_KEY"):
 
 from deep_agent.erpnext.tools import ALL_ERPNEXT_TOOLS  # noqa: E402
 from deep_agent.sandbox import get_or_create_sandbox  # noqa: E402
+from langgraph.checkpoint.memory import MemorySaver  # noqa: E402
+
+checkpointer = MemorySaver()
 
 DEFAULT_MODEL = os.getenv("DEEP_AGENT_MODEL", "deepseek:deepseek-v4-flash")
 
@@ -117,6 +120,7 @@ def _build_agent(backend=None):
         system_prompt=SYSTEM_PROMPT,
         subagents=SUBAGENTS,
         interrupt_on=interrupt_config,
+        checkpointer=checkpointer,
         name="erpnext_deep_agent",
     )
 
