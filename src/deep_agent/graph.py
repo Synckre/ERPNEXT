@@ -10,8 +10,6 @@ from langchain_core.runnables import RunnableConfig
 
 from deepagents import create_deep_agent
 from langchain_core.tools import tool
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.types import Checkpointer
 from langgraph_sdk.runtime import ServerRuntime
 
 from dotenv import load_dotenv
@@ -96,49 +94,29 @@ SUBAGENTS = [
 MAIN_TOOLS = [utc_now] + ALL_ERPNEXT_TOOLS
 
 
-def _create_checkpointer() -> Checkpointer:
-    """Crea el checkpointer persistente para el grafo.
-
-    Preferencia:
-    1. Postgres (AsyncPostgresSaver) si se configura `LANGGRAPH_POSTGRES_DSN`
-       (o `POSTGRES_DSN`) — el estado sobrevive reinicios del servidor.
-    2. `MemorySaver` por defecto — estado en memoria, suficiente como MVP.
-
-    Se comparte una única instancia a nivel de módulo: todas las peticiones usan
-    el mismo checkpointer y el estado se separa por `thread_id`. Sin esto, el
-    grafo es stateless y los `__interrupt__` (Human-in-the-loop) no se pueden
-    reanudar: cada request arrancaría un grafo nuevo y el tool nunca se ejecuta.
-    """
-    dsn = os.getenv("LANGGRAPH_POSTGRES_DSN") or os.getenv("POSTGRES_DSN")
-    if dsn:
-        # Requiere `langgraph-checkpoint-postgres` + `psycopg[binary]` instalados.
-        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-        from psycopg_pool import AsyncConnectionPool
-
-        pool = AsyncConnectionPool(conninfo=dsn, open=False)
-        return AsyncPostgresSaver(pool)
-    return MemorySaver()
+ENABLE_INTERRUPTS = os.getenv("ENABLE_INTERRUPTS", "false").lower() == "true"
 
 
-# Checkpointer compartido — habilita interrupts persistentes por thread_id.
-CHECKPOINTER = _create_checkpointer()
+def _build_agent(backend=None):
+    interrupt_config = (
+        {
+            "execute": True,
+            "write_file": True,
+            "erpnext_create_document": True,
+            "erpnext_update_document": True,
+            "erpnext_submit_document": True,
+        }
+        if ENABLE_INTERRUPTS
+        else None
+    )
 
-
-def _build_agent(backend=None, checkpointer: Checkpointer | None = None):
     return create_deep_agent(
         model=DEFAULT_MODEL,
         tools=MAIN_TOOLS,
         backend=backend,
         system_prompt=SYSTEM_PROMPT,
         subagents=SUBAGENTS,
-        checkpointer=checkpointer or CHECKPOINTER,
-        interrupt_on={
-            "execute": True,
-            "write_file": True,
-            "erpnext_create_document": True,
-            "erpnext_update_document": True,
-            "erpnext_submit_document": True,
-        },
+        interrupt_on=interrupt_config,
         name="erpnext_deep_agent",
     )
 
